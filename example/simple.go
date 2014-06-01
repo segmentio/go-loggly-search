@@ -2,6 +2,7 @@ package main
 
 import "github.com/segmentio/go-loggly-search"
 import . "github.com/bitly/go-simplejson"
+import "log"
 import "fmt"
 import "os"
 
@@ -11,8 +12,18 @@ func check(err error) {
 	}
 }
 
+func env(name string) string {
+	val := os.Getenv(name)
+
+	if val == "" {
+		log.Fatalf("env variable %s required for example", name)
+	}
+
+	return val
+}
+
 func main() {
-	c := search.New(os.Getenv("ACCOUNT"), os.Getenv("USER"), os.Getenv("PASS"))
+	c := search.New(env("ACCOUNT"), env("USER"), env("PASS"))
 
 	res, err := c.Query(`(login OR logout) AND tobi`).Size(50).From("-5h").Fetch()
 	check(err)
@@ -20,6 +31,7 @@ func main() {
 	for _, event := range res.Events {
 		Output(event)
 	}
+
 	fmt.Println()
 }
 
