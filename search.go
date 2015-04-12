@@ -1,6 +1,6 @@
 package search
 
-import . "github.com/bitly/go-simplejson"
+import "github.com/bitly/go-simplejson"
 import "io/ioutil"
 import "net/http"
 import "net/url"
@@ -69,7 +69,7 @@ func (c *Client) Get(path string) (*http.Response, error) {
 }
 
 // GET json from the given path.
-func (c *Client) GetJSON(path string) (j *Json, err error) {
+func (c *Client) GetJSON(path string) (j *simplejson.Json, err error) {
 	res, err := c.Get(path)
 
 	if err != nil {
@@ -83,19 +83,19 @@ func (c *Client) GetJSON(path string) (j *Json, err error) {
 		return
 	}
 
-	j, err = NewJson(body)
+	j, err = simplejson.NewJson(body)
 	return
 }
 
 // Create a new search instance, loggly requires that a search
 // is made before you may fetch events from it with a second call.
-func (c *Client) CreateSearch(params string) (*Json, error) {
+func (c *Client) CreateSearch(params string) (*simplejson.Json, error) {
 	return c.GetJSON("/search?" + params)
 }
 
 // Get events, must be called after CreateSearch() with the
 // correct rsid to reference the search.
-func (c *Client) GetEvents(params string) (*Json, error) {
+func (c *Client) GetEvents(params string) (*simplejson.Json, error) {
 	return c.GetJSON("/events?" + params)
 }
 
