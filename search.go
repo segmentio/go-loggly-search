@@ -77,6 +77,11 @@ func (c *Client) GetJSON(path string) (j *simplejson.Json, err error) {
 	}
 
 	defer res.Body.Close()
+
+	if res.StatusCode >= 400 {
+		return nil, fmt.Errorf("go-loggly-search: %q", res.Status)
+	}
+
 	body, err := ioutil.ReadAll(res.Body)
 
 	if err != nil {
