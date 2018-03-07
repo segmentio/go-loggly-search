@@ -11,11 +11,12 @@ import "strings"
 // Loggly search client with user credentials, loggly
 // does not seem to support tokens right now.
 type Client struct {
-	User       string
-	Pass       string
-	Account    string
-	Endpoint   string
-	Paginating bool
+	User         string
+	Pass         string
+	Account      string
+	Endpoint     string
+	Paginating   bool
+	GetAllAtOnce bool
 }
 
 // Search response with total events, page number
@@ -44,7 +45,7 @@ func newQuery(c *Client, str string) *query {
 		query:  str,
 		from:   "-24h",
 		until:  "now",
-		order:  "desc",
+		order:  "asc",
 		size:   100,
 	}
 }
@@ -52,11 +53,12 @@ func newQuery(c *Client, str string) *query {
 // Create a new loggly search client with credentials.
 func New(account string, user string, pass string) *Client {
 	c := &Client{
-		Account:    account,
-		User:       user,
-		Pass:       pass,
-		Endpoint:   "loggly.com/apiv2",
-		Paginating: true,
+		Account:      account,
+		User:         user,
+		Pass:         pass,
+		Endpoint:     "loggly.com/apiv2",
+		Paginating:   true,
+		GetAllAtOnce: false,
 	}
 
 	return c
@@ -146,17 +148,18 @@ func (c *Client) Search(params string) (*Response, error) {
 			Events: j.Get("events").MustArray(),
 			Url:    urlNext,
 		}
-
-		for response.Url != "" {
-			s := strings.Split(response.Url, "=")
-    		nextID := s[1]
+		if c.GetAllAtOnce {
+			for response.Url != "" {
+				s := strings.Split(response.Url, "=")
+    			nextID := s[1]
     		
-    		j, err = c.CreateNextSearch(nextID)
-    		if err != nil {
-				return nil, err
+    			j, err = c.CreateNextSearch(nextID)
+    			if err != nil {
+					return nil, err
+				}
+    			response.Url = j.Get("next").MustString()
+    			response.Events = append (response.Events, j.Get("events").MustArray()...)
 			}
-    		response.Url = j.Get("next").MustString()
-    		response.Events = append (response.Events, j.Get("events").MustArray()...)
 		}
 		return response, nil
 	} else {
@@ -166,6 +169,20 @@ func (c *Client) Search(params string) (*Response, error) {
 			Events: j.Get("events").MustArray(),
 		}, nil
 	}
+}
+
+// NextSearch response with next part of events
+// for the paginating mode on. It also may
+// contains url for the next part of events
+func (c *Client) NextSearch(nextID string) (*Response, error) {
+	j, err := c.CreateNextSearch(nextID)
+   	if err != nil {
+		return nil, err
+	}
+	return &Response{
+		Events: j.Get("events").MustArray(),
+		Url:    j.Get("next").MustString(),
+	}, nil
 }
 
 // Create a new search query using the fluent api.
@@ -208,8 +225,17 @@ func (q *query) To(str string) *query {
 	return q
 }
 
-// Search response with total events, page number
-// and the events array.
+// Fetch response with events, page number
+// and the events array. In Paginating mode
+// it also may contains url for the next
+// part of events
 func (q *query) Fetch() (*Response, error) {
 	return q.client.Search(q.String())
+}
+
+// NextFetch response with next part of events
+// for the paginating mode on. It also may
+// contains url for the next part of events
+func (q *query) NextFetch(nextID string) (*Response, error) {
+	return q.client.NextSearch(nextID)
 }
