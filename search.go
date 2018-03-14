@@ -39,13 +39,13 @@ type query struct {
 }
 
 // Create a new query
-func newQuery(c *Client, str string) *query {
+func newQuery(c *Client, str string, ord string) *query {
 	return &query{
 		client: c,
 		query:  str,
 		from:   "-24h",
 		until:  "now",
-		order:  "asc",
+		order:  ord,
 		size:   100,
 	}
 }
@@ -135,7 +135,7 @@ func (c *Client) Search(params string) (*Response, error) {
 	} else {
 		id := j.GetPath("rsid", "id").MustString()
 		j, err = c.GetEvents("rsid=" + id)
-		
+
 		if err != nil {
 			return nil, err
 		}
@@ -151,14 +151,14 @@ func (c *Client) Search(params string) (*Response, error) {
 		if c.GetAllAtOnce {
 			for response.Url != "" {
 				s := strings.Split(response.Url, "=")
-    			nextID := s[1]
-    		
-    			j, err = c.CreateNextSearch(nextID)
-    			if err != nil {
+				nextID := s[1]
+
+				j, err = c.CreateNextSearch(nextID)
+				if err != nil {
 					return nil, err
 				}
-    			response.Url = j.Get("next").MustString()
-    			response.Events = append (response.Events, j.Get("events").MustArray()...)
+				response.Url = j.Get("next").MustString()
+				response.Events = append(response.Events, j.Get("events").MustArray()...)
 			}
 		}
 		return response, nil
@@ -176,7 +176,7 @@ func (c *Client) Search(params string) (*Response, error) {
 // contains url for the next part of events
 func (c *Client) NextSearch(nextID string) (*Response, error) {
 	j, err := c.CreateNextSearch(nextID)
-   	if err != nil {
+	if err != nil {
 		return nil, err
 	}
 	return &Response{
@@ -186,8 +186,8 @@ func (c *Client) NextSearch(nextID string) (*Response, error) {
 }
 
 // Create a new search query using the fluent api.
-func (c *Client) Query(str string) *query {
-	return newQuery(c, str)
+func (c *Client) Query(str string, order string) *query {
+	return newQuery(c, str, order)
 }
 
 // Return the encoded query-string.
