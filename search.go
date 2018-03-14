@@ -6,14 +6,17 @@ import "net/http"
 import "net/url"
 import "strconv"
 import "fmt"
+import "strings"
 
 // Loggly search client with user credentials, loggly
 // does not seem to support tokens right now.
 type Client struct {
-	User     string
-	Pass     string
-	Account  string
-	Endpoint string
+	User         string
+	Pass         string
+	Account      string
+	Endpoint     string
+	Paginating   bool
+	GetAllAtOnce bool
 }
 
 // Search response with total events, page number
@@ -22,6 +25,7 @@ type Response struct {
 	Total  int64
 	Page   int64
 	Events []interface{}
+	Url    string
 }
 
 // Query builder struct
@@ -35,13 +39,13 @@ type query struct {
 }
 
 // Create a new query
-func newQuery(c *Client, str string) *query {
+func newQuery(c *Client, str string, ord string) *query {
 	return &query{
 		client: c,
 		query:  str,
 		from:   "-24h",
 		until:  "now",
-		order:  "desc",
+		order:  ord,
 		size:   100,
 	}
 }
@@ -49,10 +53,12 @@ func newQuery(c *Client, str string) *query {
 // Create a new loggly search client with credentials.
 func New(account string, user string, pass string) *Client {
 	c := &Client{
-		Account:  account,
-		User:     user,
-		Pass:     pass,
-		Endpoint: "loggly.com/apiv2",
+		Account:      account,
+		User:         user,
+		Pass:         pass,
+		Endpoint:     "loggly.com/apiv2",
+		Paginating:   true,
+		GetAllAtOnce: false,
 	}
 
 	return c
@@ -95,7 +101,16 @@ func (c *Client) GetJSON(path string) (j *simplejson.Json, err error) {
 // Create a new search instance, loggly requires that a search
 // is made before you may fetch events from it with a second call.
 func (c *Client) CreateSearch(params string) (*simplejson.Json, error) {
-	return c.GetJSON("/search?" + params)
+	if c.Paginating {
+		return c.GetJSON("/events/iterate?" + params)
+	} else {
+		return c.GetJSON("/search?" + params)
+	}
+}
+
+// Create a next paginating search instance.
+func (c *Client) CreateNextSearch(params string) (*simplejson.Json, error) {
+	return c.GetJSON("/events/iterate?next=" + params)
 }
 
 // Get events, must be called after CreateSearch() with the
@@ -113,25 +128,66 @@ func (c *Client) Search(params string) (*Response, error) {
 		return nil, err
 	}
 
-	id := j.GetPath("rsid", "id").MustString()
-	j, err = c.GetEvents("rsid=" + id)
+	urlNext := ""
 
-	if err != nil {
-		return nil, err
+	if c.Paginating {
+		urlNext = j.Get("next").MustString()
+	} else {
+		id := j.GetPath("rsid", "id").MustString()
+		j, err = c.GetEvents("rsid=" + id)
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Search response with total events, page number
 	// and the events array.
+	if c.Paginating {
+		response := &Response{
+			Events: j.Get("events").MustArray(),
+			Url:    urlNext,
+		}
+		if c.GetAllAtOnce {
+			for response.Url != "" {
+				s := strings.Split(response.Url, "=")
+				nextID := s[1]
+
+				j, err = c.CreateNextSearch(nextID)
+				if err != nil {
+					return nil, err
+				}
+				response.Url = j.Get("next").MustString()
+				response.Events = append(response.Events, j.Get("events").MustArray()...)
+			}
+		}
+		return response, nil
+	} else {
+		return &Response{
+			Total:  j.Get("total_events").MustInt64(),
+			Page:   j.Get("page").MustInt64(),
+			Events: j.Get("events").MustArray(),
+		}, nil
+	}
+}
+
+// NextSearch response with next part of events
+// for the paginating mode on. It also may
+// contains url for the next part of events
+func (c *Client) NextSearch(nextID string) (*Response, error) {
+	j, err := c.CreateNextSearch(nextID)
+	if err != nil {
+		return nil, err
+	}
 	return &Response{
-		Total:  j.Get("total_events").MustInt64(),
-		Page:   j.Get("page").MustInt64(),
 		Events: j.Get("events").MustArray(),
+		Url:    j.Get("next").MustString(),
 	}, nil
 }
 
 // Create a new search query using the fluent api.
-func (c *Client) Query(str string) *query {
-	return newQuery(c, str)
+func (c *Client) Query(str string, order string) *query {
+	return newQuery(c, str, order)
 }
 
 // Return the encoded query-string.
@@ -169,8 +225,17 @@ func (q *query) To(str string) *query {
 	return q
 }
 
-// Search response with total events, page number
-// and the events array.
+// Fetch response with events, page number
+// and the events array. In Paginating mode
+// it also may contains url for the next
+// part of events
 func (q *query) Fetch() (*Response, error) {
 	return q.client.Search(q.String())
+}
+
+// NextFetch response with next part of events
+// for the paginating mode on. It also may
+// contains url for the next part of events
+func (q *query) NextFetch(nextID string) (*Response, error) {
+	return q.client.NextSearch(nextID)
 }
